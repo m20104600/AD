@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/ZenmoFeiShi/Qx",
+  "author": "TG@ZenMoFiShi",
+  "revision": "5921d619f843cd203aaf976631d71cada634ef3a",
+  "snippet_last_commit": "5921d619f843cd203aaf976631d71cada634ef3a",
+  "files": {
+    "TxvideoAD.snippet": {
+      "url": "https://raw.githubusercontent.com/ZenmoFeiShi/Qx/5921d619f843cd203aaf976631d71cada634ef3a/TxvideoAD.snippet",
+      "sha256": "39ba1d951e0545689d28c015c33bb4a92a8ca18e155ebae93fcfd4002708fa0f"
+    },
+    "Txvideoad.js": {
+      "url": "https://raw.githubusercontent.com/ZenmoFeiShi/Qx/5921d619f843cd203aaf976631d71cada634ef3a/Txvideoad.js",
+      "sha256": "1de991d9107f9ae6ffbe44d7e0afd84d5ca319f274169d1abb375d59d8320b13"
+    }
+  }
+}

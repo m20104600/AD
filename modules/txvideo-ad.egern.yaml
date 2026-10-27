@@ -1,0 +1,69 @@
+# Original QX rules: ZenmoFeiShi/Qx/TxvideoAD.snippet (TG@ZenMoFiShi)
+# Egern conversion: m20104600. Pinned source: ../upstream/SOURCE.json
+name: 腾讯视频净化
+description: '腾讯视频广告净化 Egern 适配版；保留上游 TRPC / Protobuf / JCE / gzip 处理逻辑。来源：ZenmoFeiShi/Qx。'
+author: 'TG@ZenMoFiShi（原作） / m20104600（Egern 适配）'
+homepage: 'https://github.com/m20104600/AD'
+icon: 'play.rectangle.fill'
+
+rules:
+  - domain:
+      match: iacc.stgw.qq.com
+      policy: REJECT
+  - domain:
+      match: tacc.video.qq.com
+      policy: REJECT
+
+mitm:
+  hostnames:
+    - i.video.qq.com
+    - iacc.qq.com
+    - config.ab.qq.com
+    - rdelivery.qq.com
+
+scriptings:
+  - http_request:
+      name: 腾讯视频·TRPC 请求净化
+      match: '^https?:\/\/i\.video\.qq\.com\/(?:\?.*)?$'
+      script_url: 'https://raw.githubusercontent.com/m20104600/AD/main/scripts/txvideo-ad.egern.js'
+      body_required: true
+      binary_body: true
+      max_size: 4194304
+      timeout: 15
+      update_interval: 3600
+  - http_response:
+      name: 腾讯视频·TRPC 响应净化
+      match: '^https?:\/\/i\.video\.qq\.com\/(?:\?.*)?$'
+      script_url: 'https://raw.githubusercontent.com/m20104600/AD/main/scripts/txvideo-ad.egern.js'
+      body_required: true
+      binary_body: true
+      max_size: 4194304
+      timeout: 15
+      update_interval: 3600
+  - http_response:
+      name: 腾讯视频·JCE 响应净化
+      match: '^https?:\/\/iacc\.qq\.com\/(?:\?.*)?$'
+      script_url: 'https://raw.githubusercontent.com/m20104600/AD/main/scripts/txvideo-ad.egern.js'
+      body_required: true
+      binary_body: true
+      max_size: 4194304
+      timeout: 15
+      update_interval: 3600
+  - http_response:
+      name: 腾讯视频·远程标签配置
+      match: '^https?:\/\/config\.ab\.qq\.com\/tab\/GetTabRemoteConfig(?:\?.*)?$'
+      script_url: 'https://raw.githubusercontent.com/m20104600/AD/main/scripts/txvideo-ad.egern.js'
+      body_required: true
+      binary_body: true
+      max_size: 4194304
+      timeout: 15
+      update_interval: 3600
+  - http_response:
+      name: 腾讯视频·SDK 配置
+      match: '^https:\/\/rdelivery\.qq\.com\/v1\/sdkconfig\/get(?:\?.*)?$'
+      script_url: 'https://raw.githubusercontent.com/m20104600/AD/main/scripts/txvideo-ad.egern.js'
+      body_required: true
+      binary_body: false
+      max_size: 4194304
+      timeout: 15
+      update_interval: 3600

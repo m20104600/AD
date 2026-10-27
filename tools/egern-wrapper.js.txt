@@ -1,0 +1,85 @@
+/*
+ * 腾讯视频净化 · Egern adapter
+ * Original: ZenmoFeiShi/Qx, Txvideoad.js (TG@ZenMoFiShi)
+ * Source revision and checksums: ../upstream/SOURCE.json
+ * Adapter/build/test maintenance: m20104600
+ * Upstream algorithm is embedded unchanged. No remote code evaluation.
+ */
+
+function copyHeaders(headers, binaryBody) {
+  const out = {};
+  const assign = (key, value) => {
+    if (typeof value === 'function' || value == null) return;
+    const lower = String(key).toLowerCase();
+    if (lower === 'content-length') return;
+    // Do not label decoded text/plain protobuf as gzip.
+    if (lower === 'content-encoding') {
+      if (typeof binaryBody === 'string') return;
+      if (/^gzip$/i.test(String(value)) && !(binaryBody[0] === 0x1f && binaryBody[1] === 0x8b)) return;
+    }
+    out[key] = value;
+  };
+  if (headers && typeof headers.forEach === 'function') {
+    headers.forEach((value, key) => {
+      const all = typeof headers.getAll === 'function' ? headers.getAll(key) : null;
+      assign(key, all && all.length > 1 ? all : value);
+    });
+    if (typeof headers.getSetCookie === 'function') {
+      const cookies = headers.getSetCookie();
+      if (cookies.length) out['set-cookie'] = cookies;
+    }
+  } else if (headers) {
+    for (const key of Object.keys(headers)) assign(key, headers[key]);
+  }
+  return out;
+}
+
+export default async function (ctx) {
+  const request = ctx && ctx.request;
+  if (!request || typeof request.url !== 'string') return;
+  const url = request.url;
+  const trpc = /^https?:\/\/i\.video\.qq\.com\/(?:\?.*)?$/.test(url);
+  const jce = /^https?:\/\/iacc\.qq\.com\/(?:\?.*)?$/.test(url);
+  const ab = /^https?:\/\/config\.ab\.qq\.com\/tab\/GetTabRemoteConfig(?:\?.*)?$/.test(url);
+  const delivery = /^https:\/\/rdelivery\.qq\.com\/v1\/sdkconfig\/get(?:\?.*)?$/.test(url);
+  const isResponse = ctx.response != null;
+  if (isResponse ? !(trpc || jce || ab || delivery) : !trpc) return;
+  const target = isResponse ? ctx.response : request;
+  // Lexical QX compatibility boundary. These are local variables, not global APIs.
+  const $request = { url };
+  const $response = isResponse ? {} : undefined;
+  let result;
+  const $done = (patch) => { result = patch; };
+  try {
+    if (isResponse && delivery) {
+      if (typeof target.text !== 'function') return;
+      $response.body = await target.text();
+    } else {
+      if (typeof target.arrayBuffer !== 'function') return;
+      const raw = await target.arrayBuffer();
+      if (!raw || raw.byteLength === 0) return;
+      (isResponse ? $response : $request).bodyBytes = raw;
+    }
+
+/*__UPSTREAM__*/
+
+    if (!result) return;
+    let body;
+    if (Object.prototype.hasOwnProperty.call(result, 'bodyBytes')) {
+      const raw = result.bodyBytes;
+      body = ArrayBuffer.isView(raw)
+        ? new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)
+        : new Uint8Array(raw);
+    } else if (typeof result.body === 'string') {
+      body = result.body;
+    } else {
+      return;
+    }
+    // Return only Egern-supported body types; never coerce binary through UTF-8.
+    return { body, headers: copyHeaders(target.headers, body) };
+  } catch (error) {
+    // Fail open: no request/response mutation on unsupported or malformed data.
+    console.log('txvideo-egern: body unavailable or unsupported (' + (error.name || 'Error') + ')');
+    return;
+  }
+}
