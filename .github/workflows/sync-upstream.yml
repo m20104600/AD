@@ -31,6 +31,7 @@ jobs:
       - name: Fetch pinned upstream and validate candidate
         run: python tools/sync_upstream.py
       - name: Publish validated update
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -48,6 +49,14 @@ jobs:
           local_sha=$(git rev-parse HEAD)
           remote_sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           test "$local_sha" = "$remote_sha"
+          echo 'updated=true' >> "$GITHUB_OUTPUT"
+      - name: Notify Telegram after published update
+        if: steps.publish.outputs.updated == 'true'
+        continue-on-error: true
+        env:
+          AD_TG_BOT_TOKEN: ${{ secrets.AD_TG_BOT_TOKEN }}
+          AD_TG_CHAT_ID: ${{ secrets.AD_TG_CHAT_ID }}
+        run: python tools/notify_update.py
       - name: Report failure without replacing current release
         if: failure()
         env:
