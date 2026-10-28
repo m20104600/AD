@@ -10,6 +10,10 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
+import urllib.error
+import time
+import sys
+from email.utils import parsedate_to_datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'ZenmoFeiShi/Qx'
@@ -23,11 +27,43 @@ def download(url):
     token = os.environ.get('GH_TOKEN')
     if token and url.startswith('https://api.github.com/'):
         headers['Authorization'] = 'Bearer ' + token
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=45) as response:
-        data = response.read(2_000_001)
-    if len(data) > 2_000_000:
-        raise ValueError('Upstream file exceeds 2 MB limit')
-    return data
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=45) as response:
+                data = response.read(2_000_001)
+            if len(data) > 2_000_000:
+                raise ValueError('Upstream file exceeds 2 MB limit')
+            return data
+        except urllib.error.HTTPError as exc:
+            rate_limited = exc.code == 429 or (exc.code == 403 and (
+                exc.headers.get('X-RateLimit-Remaining') == '0'
+                or exc.headers.get('Retry-After') is not None
+                or 'rate limit' in str(exc.reason).lower()))
+            if not rate_limited and exc.code not in (500, 502, 503, 504):
+                raise
+            if attempt == 2:
+                raise
+            delay = 60 if rate_limited else 5 * (2 ** attempt)
+            retry_after = exc.headers.get('Retry-After')
+            if retry_after:
+                try:
+                    delay = float(retry_after)
+                except ValueError:
+                    delay = parsedate_to_datetime(retry_after).timestamp() - time.time()
+            elif exc.headers.get('X-RateLimit-Remaining') == '0' and exc.headers.get('X-RateLimit-Reset'):
+                delay = float(exc.headers['X-RateLimit-Reset']) - time.time() + 1
+            # Never hammer a depleted quota; leave the current release intact until next schedule.
+            if delay > 60:
+                print('GitHub quota unavailable for over 60s; deferring to next scheduled run.', file=sys.stderr)
+                raise
+            delay = max(1, delay)
+            exc.close()
+        except (urllib.error.URLError, TimeoutError):
+            if attempt == 2:
+                raise
+            delay = 5 * (2 ** attempt)
+        print(f'Upstream fetch retry {attempt + 1}/2 after {delay:g}s.', file=sys.stderr)
+        time.sleep(delay)
 
 
 def functional_lines(data):
@@ -43,9 +79,16 @@ def validate_candidate(old_snippet, new_snippet, script):
         raise ValueError('Upstream JS is empty or no longer a QX callback script')
 
 
-def sync(root=ROOT, fetch=download, check=False):
+def resolve_revision(fetch=download):
     head = json.loads(fetch(f'https://api.github.com/repos/{REPO}/commits/main'))['sha']
-    if not re.fullmatch(r'[0-9a-f]{40}', head):
+    if not isinstance(head, str) or not re.fullmatch(r'[0-9a-f]{40}', head):
+        raise ValueError('Invalid upstream revision')
+    return head
+
+
+def sync(root=ROOT, fetch=download, check=False, revision=None):
+    head = resolve_revision(fetch) if revision is None else revision
+    if not isinstance(head, str) or not re.fullmatch(r'[0-9a-f]{40}', head):
         raise ValueError('Invalid upstream revision')
     # Both files are read at the same immutable revision, never two moving main URLs.
     candidate = {name: fetch(f'https://raw.githubusercontent.com/{REPO}/{head}/{name}')
@@ -92,5 +135,11 @@ def sync(root=ROOT, fetch=download, check=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true', help='Check without changing files')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--resolve-only', action='store_true', help='Resolve HEAD using read-only API authentication')
+    mode.add_argument('--revision', help='Use a pinned SHA without querying the API')
     args = parser.parse_args()
-    sync(check=args.check)
+    if args.resolve_only:
+        print(resolve_revision())
+    else:
+        sync(check=args.check, revision=args.revision)

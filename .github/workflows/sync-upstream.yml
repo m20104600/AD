@@ -9,12 +9,33 @@ concurrency:
   group: txvideo-upstream-sync
   cancel-in-progress: false
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      revision: ${{ steps.head.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Resolve upstream HEAD with read-only authentication
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          revision=$(python tools/sync_upstream.py --resolve-only)
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
   sync:
+    needs: resolve
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: write
-      issues: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -29,7 +50,9 @@ jobs:
       - name: Test sync safety gates
         run: python -m unittest discover -s tests -p 'test_sync_*.py'
       - name: Fetch pinned upstream and validate candidate
-        run: python tools/sync_upstream.py
+        env:
+          UPSTREAM_REVISION: ${{ needs.resolve.outputs.revision }}
+        run: python tools/sync_upstream.py --revision "$UPSTREAM_REVISION"
       - name: Publish validated update
         id: publish
         env:
@@ -57,8 +80,15 @@ jobs:
           AD_TG_BOT_TOKEN: ${{ secrets.AD_TG_BOT_TOKEN }}
           AD_TG_CHAT_ID: ${{ secrets.AD_TG_CHAT_ID }}
         run: python tools/notify_update.py
+  report:
+    needs: [resolve, sync]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
       - name: Report failure without replacing current release
-        if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

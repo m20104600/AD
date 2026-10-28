@@ -49,6 +49,16 @@ class SyncSafetyTests(unittest.TestCase):
         self.assertTrue(sync.sync(self.root, self.fetch, check=True))
         self.assertEqual((self.root / 'upstream/Txvideoad.js').read_bytes(), b'$done({});\n')
 
+    def test_pinned_revision_never_calls_api(self):
+        self.assertFalse(sync.sync(self.root, self.fetch, revision=self.sha))
+        self.assertEqual(len(self.calls), 2)
+        self.assertTrue(all(u.startswith('https://raw.githubusercontent.com/') for u in self.calls))
+
+    def test_invalid_pinned_revision_never_fetches(self):
+        with self.assertRaisesRegex(ValueError, 'Invalid upstream'):
+            sync.sync(self.root, self.fetch, revision='../main')
+        self.assertEqual(self.calls, [])
+
     def test_invalid_commit_is_rejected(self):
         self.sha = '../main'
         with self.assertRaisesRegex(ValueError, 'Invalid upstream'):
